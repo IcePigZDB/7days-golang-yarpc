@@ -24,6 +24,7 @@ type Call struct {
 	Reply         interface{} // reply from the function
 	Error         error       // if error occurs, it will be set
 	Done          chan *Call  // Strobes when call is complete.
+	ServerID      int         // server do this call
 }
 
 func (call *Call) done() {
@@ -134,6 +135,7 @@ func (client *Client) receive() {
 			err = client.cc.ReadBody(nil)
 			call.done()
 		default:
+			call.ServerID = h.ServerID
 			err = client.cc.ReadBody(call.Reply)
 			if err != nil {
 				call.Error = errors.New("reading body" + err.Error())
@@ -208,6 +210,8 @@ func (client *Client) send(call *Call) {
 	// prepare request header
 	client.header.ServiceMethod = call.ServiceMethod
 	client.header.Seq = call.Seq
+	// default set ServerID to be 0
+	client.header.ServerID = 0
 	client.header.Error = ""
 	// encode and send the request
 	if err := client.cc.Write(&client.header, call.Args); err != nil {
@@ -239,10 +243,10 @@ func (client *Client) Go(serviceMethod string, args, reply interface{}, done cha
 	return call
 }
 
-// Call invokes the named function, waits for it to complete,
+// CallWithoutServerID invokes the named function, waits for it to complete,
 // and returns its error status.
 // Client.Call 的超时处理机制，使用 context 包实现，控制权交给用户，控制更为灵活。
-func (client *Client) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
+func (client *Client) CallWithoutServerID(ctx context.Context, serviceMethod string, args, reply interface{}) error {
 	call := client.Go(serviceMethod, args, reply, make(chan *Call, 1))
 	select {
 	case <-ctx.Done():
@@ -250,6 +254,18 @@ func (client *Client) Call(ctx context.Context, serviceMethod string, args, repl
 		return errors.New("rpc client:call failed:" + ctx.Err().Error())
 	case call := <-call.Done:
 		return call.Error
+	}
+}
+
+// Call return error and serverID
+func (client *Client) Call(ctx context.Context, serviceMethod string, args, reply interface{}) (int, error) {
+	call := client.Go(serviceMethod, args, reply, make(chan *Call, 1))
+	select {
+	case <-ctx.Done():
+		client.removeCall(call.Seq)
+		return call.ServerID, errors.New("rpc client:call failed:" + ctx.Err().Error())
+	case call := <-call.Done:
+		return call.ServerID, call.Error
 	}
 }
 

@@ -65,13 +65,13 @@ type service struct {
 
 func newService(rcvr interface{}) *service {
 	s := new(service)
-	s.rcvr = reflect.ValueOf(rcvr)
-	s.name = reflect.Indirect(s.rcvr).Type().Name()
-	s.typ = reflect.TypeOf(rcvr)
+	s.rcvr = reflect.ValueOf(rcvr)                  // set service struct value
+	s.name = reflect.Indirect(s.rcvr).Type().Name() // set service name
+	s.typ = reflect.TypeOf(rcvr)                    //set service type
 	if !ast.IsExported(s.name) {
 		log.Fatalf("rpc server: %s is not a valid service name", s.name)
 	}
-	s.registerMethods()
+	s.registerMethods() // register methods of service
 	return s
 }
 
@@ -92,6 +92,7 @@ func (s *service) registerMethods() {
 			continue
 		}
 		argType, replyType := mType.In(1), mType.In(2)
+		// check Exported in first letter
 		if !isExportedOrBuiltinType(argType) || !isExportedOrBuiltinType(replyType) {
 			continue
 		}

@@ -6,6 +6,7 @@ import "io"
 type Header struct {
 	ServiceMethod string // format "Service.Method"
 	Seq           uint64 // sequence number chosen by client
+	ServerID      int    // sequence used by server
 	Error         string
 }
 

@@ -68,23 +68,25 @@ func (xc *XClient) dial(rpcAddr string) (*Client, error) {
 	return client, nil
 }
 
-func (xc *XClient) call(rpcAddr string, ctx context.Context, serviceMethod string, args, reply interface{}) error {
+func (xc *XClient) call(rpcAddr string, ctx context.Context, serviceMethod string, args, reply interface{}) (serverID int, err error) {
 	client, err := xc.dial(rpcAddr)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return client.Call(ctx, serviceMethod, args, reply)
+	serverID, err = client.Call(ctx, serviceMethod, args, reply)
+	return serverID, err
 }
 
 // Call invokes the named function, waits for it to complete,
 // and returns its error status.
 // xc will choose a proper server.
-func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
+func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply interface{}) (serverID int, err error) {
 	rpcAddr, err := xc.d.Get(xc.mode)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return xc.call(rpcAddr, ctx, serviceMethod, args, reply)
+	serverID, err = xc.call(rpcAddr, ctx, serviceMethod, args, reply)
+	return serverID, err
 }
 
 // Broadcast 将请求广播到所有的服务实例，如果任意一个实例发生错误，
@@ -116,7 +118,7 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 				clonedReply = reflect.New(reflect.ValueOf(reply).Elem().Type()).Interface()
 			}
 			// it is ok rpcAddr in the for range use only one address,but value will change
-			err := xc.call(rpcAddr, ctx, serviceMethod, args, clonedReply)
+			_, err := xc.call(rpcAddr, ctx, serviceMethod, args, clonedReply)
 			mu.Lock()
 			if err != nil && e == nil {
 				e = err

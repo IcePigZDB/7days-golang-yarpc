@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +27,6 @@ func (f Foo) Sum(args Args, reply *int) error {
 
 func (f Foo) Uppercase(args ArgsStr, reply *string) error {
 	*reply = strings.ToUpper(args.Str1)
-	fmt.Printf("comehere", reply)
 	return nil
 }
 
@@ -49,64 +47,75 @@ func startRegistry(wg *sync.WaitGroup) {
 
 func startServer(serverID int, registryAddr string, wg *sync.WaitGroup) {
 	var foo Foo
-	l, _ := net.Listen("tcp", ":0")
-	server := yarpc.NewServer(serverID)
-	_ = server.Register(&foo)
-	registry.Heartbeat(registryAddr, "tcp@"+l.Addr().String(), 0)
+	l, _ := net.Listen("tcp", ":0")                               // listen tcp port
+	server := yarpc.NewServer(serverID)                           // create new server
+	_ = server.Register(&foo)                                     // register foo service
+	registry.Heartbeat(registryAddr, "tcp@"+l.Addr().String(), 0) // heart beat with server
 	wg.Done()
-	server.Accept(l)
+	server.Accept(l) // server listen to tpc conn
 }
 
-func foo(xc *xclient.XClient, ctx context.Context, typ, serviceMethod string, args interface{}) {
-	var reply int
-	var err error
-	switch typ {
-	case "call":
-		err = xc.Call(ctx, serviceMethod, args, &reply)
-	case "broadcast":
-		err = xc.Broadcast(ctx, serviceMethod, args, &reply)
-	}
-	fmt.Println(reflect.TypeOf(args))
-	if err != nil {
-		log.Printf("%s %s error: %v", typ, serviceMethod, err)
-	} else {
-		// log.Printf("%s %s success: %d + %d = %d", typ, serviceMethod, args.Num1, args.Num2, reply)
-	}
-}
+// func foo(xc *xclient.XClient, ctx context.Context, typ, serviceMethod string, args interface{}) {
+// 	var reply int
+// 	var err error
+// 	switch typ {
+// 	case "call":
+// 		err = xc.Call(ctx, serviceMethod, args, &reply)
+// 	case "broadcast":
+// 		err = xc.Broadcast(ctx, serviceMethod, args, &reply)
+// 	}
+// 	fmt.Println(reflect.TypeOf(args))
+// 	if err != nil {
+// 		log.Printf("%s %s error: %v", typ, serviceMethod, err)
+// 	} else {
+// 		// log.Printf("%s %s success: %d + %d = %d", typ, serviceMethod, args.Num1, args.Num2, reply)
+// 	}
+// }
 
-func call(registry string) {
+func call(registry string, callNum int, serverNum int) {
 	d := xclient.NewYaRegistryDiscovery(registry, 0)
+	// randomSelect
 	xc := xclient.NewXClient(d, xclient.RandomSelect, nil)
+	// round roubin
+	// xc := xclient.NewXClient(d, xclient.RoundRobinSelect, nil)
 	defer func() { _ = xc.Close() }()
 	// send request & receive response
 	var wg sync.WaitGroup
-	for i := 0; i < 1; i++ {
+	var serverChoosedSlice = make([]int, serverNum, serverNum)
+	for i := 0; i < callNum; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			var reply int
 			args := &Args{Num1: i, Num2: i * i}
-			if err := xc.Call(context.Background(), "Foo.Sum", &args, &reply); err != nil {
+			serverID, err := xc.Call(context.Background(), "Foo.Sum", &args, &reply)
+			if err != nil {
 				log.Fatal("call Foo Sum error:", err)
 			}
-			log.Printf("%s success: %d + %d = %d", "Foo.Sum", args.Num1, args.Num2, reply)
+			log.Printf("\n%s processed by server%d success:\n %d + %d = %d", "Foo.Sum", serverID, args.Num1, args.Num2, reply)
+			serverChoosedSlice[serverID]++
 		}(i)
 	}
 
-	var replyStr string
-	var argsStr *ArgsStr
-	for i := 0; i < 1; i++ {
-		argsStr = &ArgsStr{Str1: fmt.Sprintf("number %d rpc called from room 319,caller 202021080301&202022080315", i)}
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			if err := xc.Call(context.Background(), "Foo.Uppercase", &argsStr, &replyStr); err != nil {
-				log.Fatal("call Foo Uppercase error:", err)
-			}
-			log.Printf("%s success:\nbefore:%s \nafter:%s", "Foo.Uppstram", argsStr.Str1, replyStr)
-		}(i)
-	}
+	// for i := 0; i < callNum; i++ {
+	// 	wg.Add(1)
+	// 	go func(i int) {
+	// 		defer wg.Done()
+	// 		argsStr := &ArgsStr{Str1: fmt.Sprintf("number %d rpc called from room 319,caller 202021080301&202022080315", i)}
+	// 		var replyStr string
+	// 		serverID, err := xc.Call(context.Background(), "Foo.Uppercase", &argsStr, &replyStr)
+	// 		if err != nil {
+	// 			log.Fatal("call Foo Uppercase error:", err)
+	// 		}
+	// 		log.Printf("\n%s processed by server%d success:\nbefore:%s \nafter:%s", "Foo.Uppstram", serverID, argsStr.Str1, replyStr)
+	// 		serverChoosedSlice[serverID]++
+	// 	}(i)
+	// }
+
 	wg.Wait()
+	for i := 0; i < serverNum; i++ {
+		fmt.Printf("%d ", serverChoosedSlice[i])
+	}
 }
 
 // func broadcast(registry string) {
@@ -136,13 +145,13 @@ func main() {
 	wg.Wait()
 
 	time.Sleep(time.Second)
-	wg.Add(2)
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
 		go startServer(i, registryAddr, &wg)
 	}
 	wg.Wait()
 
 	time.Sleep(time.Second)
-	call(registryAddr)
+	call(registryAddr, 99, 3)
 	// broadcast(registryAddr)
 }

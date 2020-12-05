@@ -6,12 +6,13 @@
         {
             "label": "echo",
             "type": "shell",
-            "command": "echo ${fileDirname}"
+            "command": "echo ${fileDirname}",
+            "command":"echo ${workspaceFloder}"
         },
         {
             "label": "echo2",
             "type": "shell",
-            "command": "pwd",
+            "command": "echo ${workspaceFolder}",
             "problemMatcher": [],
             "group": {
                 "kind": "build",

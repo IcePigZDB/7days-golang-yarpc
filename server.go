@@ -182,14 +182,6 @@ func (server *Server) readRequest(cc codec.Codec) (*request, error) {
 	return req, nil
 }
 
-func (server *Server) sendResponse(cc codec.Codec, h *codec.Header, body interface{}, sending *sync.Mutex) {
-	sending.Lock()
-	defer sending.Unlock()
-	if err := cc.Write(h, body); err != nil {
-		log.Println("rpc server: write response error:", err)
-	}
-}
-
 // 这里需要确保 sendResponse 仅调用一次，
 // 因此将整个过程拆分为 called 和 sent 两个阶段，在这段代码中只会发生如下两种情况：
 // called 信道接收到消息，代表处理没有超时，继续执行 sendResponse。
@@ -226,16 +218,26 @@ func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.
 	}
 }
 
+func (server *Server) sendResponse(cc codec.Codec, h *codec.Header, body interface{}, sending *sync.Mutex) {
+	sending.Lock()
+	defer sending.Unlock()
+	// add serverID to return
+	h.ServerID = server.serverID
+	if err := cc.Write(h, body); err != nil {
+		log.Println("rpc server: write response error:", err)
+	}
+}
+
 // Accept accepts connections on the listener and serves requests
 // for each incoming connection.
 func (server *Server) Accept(lis net.Listener) {
 	for {
-		conn, err := lis.Accept()
+		conn, err := lis.Accept() // once tpc conn have connection
 		if err != nil {
 			log.Println("rpc server: accept error:", err)
 			return
 		}
-		go server.ServeConn(conn)
+		go server.ServeConn(conn) // process it
 	}
 }
 
@@ -287,6 +289,7 @@ func (server *Server) findService(serviceMethod string) (svc *service, mtype *me
 
 }
 
+// support http
 const (
 	connected        = "200 Connected to Ya RPC"
 	defaultRPCPath   = "/_yaprc_"
